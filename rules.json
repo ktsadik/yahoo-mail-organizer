@@ -1,0 +1,81 @@
+{
+  "dryRun": true,
+  "limit": 20,
+  "readFilter": "read",
+  "rules": [
+     {
+      "name": "Advertisements",
+      "enabled": true,
+      "priority": 5,
+      "folder": "ToTrash",
+      "matchType": "any",
+      "subjectContains": ["advertisement"],
+      "fromContains": [],
+      "action": "move"
+    },
+    {
+     "name": "Etsy Sales",
+     "enabled": true,
+     "priority": 10,
+     "folder": "מכירה באינטרנט/Etsy",
+     "matchType": "all",
+     "subjectContains": [
+         "order confirmation"
+     ],
+     "fromContains": [
+         "etsy.com"
+     ],
+     "action": "move"
+    },
+    {
+     "name": "Purchases",
+     "enabled": true,
+     "priority": 20,
+    "folder": "Purchases",
+    "matchType": "any",
+    "subjectContains": [
+        "purchase",
+        "receipt",
+        "order confirmation",
+        "invoice",
+        "payment",
+        "shipping",
+        "tracking",
+        "delivery",
+        "confirmation",
+        "bill",
+        "subscription",
+        "renewal",
+        "refund",
+        "cancellation",
+        "package"
+    ],
+    "fromContains": [
+        "aliexpress",
+        "amazon",
+        "ebay"
+    ],
+    "action": "move"
+    },
+    {
+      "name": "Vet",
+      "enabled": true,
+      "priority": 30,
+      "folder": "לוקה",
+      "matchType": "any",
+      "subjectContains": ["כלבת"],
+      "fromContains": [],
+      "action": "move"
+    },
+    {
+      "name": "Default",
+      "enabled": true,
+      "priority": 40,
+      "folder": "לוקה",
+      "matchType": "any",
+      "subjectContains": ["כלבת"],
+      "fromContains": [],
+      "action": "move"
+    }
+  ]
+}
