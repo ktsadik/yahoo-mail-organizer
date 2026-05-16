@@ -1,0 +1,22 @@
+{
+  "dryRun": true,
+  "limit": 20,
+  "readFilter": "read",
+  "rules": [
+    {
+      "name": "Example Purchases",
+      "enabled": true,
+      "priority": 20,
+      "folder": "Purchases",
+      "matchType": "any",
+      "subjectContains": [
+        "invoice",
+        "package"
+      ],
+      "fromContains": [
+        "amazon"
+      ],
+      "action": "move"
+    }
+  ]
+}

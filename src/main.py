@@ -106,7 +106,7 @@ def is_message_read(mail, msg_id: bytes) -> bool:
 
     return "\\Seen" in flags_text or "\\SEEN" in flags_text
 
-def write_log_row(row: dict) -> None:
+def write_log_row(row: dict) -> Path:
     logs_dir = BASE_DIR / "logs"
     logs_dir.mkdir(exist_ok=True)
 
@@ -135,11 +135,14 @@ def write_log_row(row: dict) -> None:
 
         writer.writerow(row)
 
+    return log_file
+
 def main() -> None:
     config = load_rules()
     dry_run = config.get("dryRun", True)
     limit = config.get("limit", 20)
     rules = config.get("rules", [])
+    last_log_file = None
 
     print("Connecting to Yahoo IMAP...")
     print(f"Account: {YAHOO_EMAIL}")
@@ -202,7 +205,7 @@ def main() -> None:
                 print(f"From: {sender}")
                 print(f"Subject: {subject}")
                 print("-" * 70)
-                write_log_row({
+                last_log_file = write_log_row({
                     "timestamp": datetime.now().isoformat(timespec="seconds"),
                     "dry_run": dry_run,
                     "email_id": msg_id.decode(),
@@ -213,6 +216,12 @@ def main() -> None:
                     "from": sender,
                     "subject": subject
                 })
+
+        if last_log_file:
+            print("\nLog file created:")
+            print(last_log_file)
+        else:
+            print("\nNo matching emails found. No log file created.")
 
         mail.logout()
 
