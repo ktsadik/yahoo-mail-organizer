@@ -74,17 +74,25 @@ def find_matching_rule(subject: str, sender: str, body: str, rules: list[dict]) 
 
     enabled_rules.sort(key=lambda r: r.get("priority", 9999))
 
+    searchable_text = f"{subject}\n{sender}\n{body}"
+
     for rule in enabled_rules:
         match_type = rule.get("matchType", "any").lower()
 
+        required_keywords = rule.get("requiredContains", [])
         subject_keywords = rule.get("subjectContains", [])
         from_keywords = rule.get("fromContains", [])
         body_keywords = rule.get("bodyContains", [])
 
+        required_has_condition = any(keyword.strip() for keyword in required_keywords)
+
+        if required_has_condition and not contains_all(searchable_text, required_keywords):
+            continue
+
         subject_has_condition = any(keyword.strip() for keyword in subject_keywords)
         from_has_condition = any(keyword.strip() for keyword in from_keywords)
         body_has_condition = any(keyword.strip() for keyword in body_keywords)
-        
+
         subject_matches = contains_any(subject, subject_keywords)
         from_matches = contains_any(sender, from_keywords)
         body_matches = contains_any(body, body_keywords)
