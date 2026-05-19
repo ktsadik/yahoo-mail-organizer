@@ -36,8 +36,37 @@ def contains_any(text: str, keywords: list[str]) -> bool:
     text_lower = text.lower()
     return any(keyword.strip().lower() in text_lower for keyword in keywords if keyword.strip())
 
+def extract_email_body(message) -> str:
+    body = ""
 
-def find_matching_rule(subject: str, sender: str, rules: list[dict]) -> dict | None:
+    if message.is_multipart():
+        for part in message.walk():
+            content_type = part.get_content_type()
+            content_disposition = str(part.get("Content-Disposition"))
+
+            if "attachment" in content_disposition:
+                continue
+
+            if content_type == "text/plain":
+                try:
+                    payload = part.get_payload(decode=True)
+                    charset = part.get_content_charset() or "utf-8"
+
+                    body += payload.decode(charset, errors="replace")
+                except Exception:
+                    pass
+    else:
+        try:
+            payload = message.get_payload(decode=True)
+            charset = message.get_content_charset() or "utf-8"
+
+            body = payload.decode(charset, errors="replace")
+        except Exception:
+            pass
+
+    return body
+
+def find_matching_rule(subject: str, sender: str, body: str, rules: list[dict]) -> dict | None:
     enabled_rules = [
         rule for rule in rules
         if rule.get("enabled", True)
@@ -50,12 +79,15 @@ def find_matching_rule(subject: str, sender: str, rules: list[dict]) -> dict | N
 
         subject_keywords = rule.get("subjectContains", [])
         from_keywords = rule.get("fromContains", [])
+        body_keywords = rule.get("bodyContains", [])
 
         subject_has_condition = any(keyword.strip() for keyword in subject_keywords)
         from_has_condition = any(keyword.strip() for keyword in from_keywords)
-
+        body_has_condition = any(keyword.strip() for keyword in body_keywords)
+        
         subject_matches = contains_any(subject, subject_keywords)
         from_matches = contains_any(sender, from_keywords)
+        body_matches = contains_any(body, body_keywords)
 
         checks = []
 
@@ -64,6 +96,9 @@ def find_matching_rule(subject: str, sender: str, rules: list[dict]) -> dict | N
 
         if from_has_condition:
             checks.append(from_matches)
+
+        if body_has_condition:
+            checks.append(body_matches)
 
         if not checks:
             continue
@@ -92,6 +127,10 @@ def build_search_criteria(read_filter: str) -> str:
             return "UNSEEN"
         case _:
             raise ValueError("readFilter must be one of: all, read, unread")
+
+def contains_all(text: str, keywords: list[str]) -> bool:
+    text_lower = text.lower()
+    return all(keyword.strip().lower() in text_lower for keyword in keywords if keyword.strip())
 
 def is_message_read(mail, msg_id: bytes) -> bool:
     status, flags_data = mail.fetch(msg_id, "(FLAGS)")
@@ -122,6 +161,7 @@ def write_log_row(row: dict) -> Path:
                 "dry_run",
                 "email_id",
                 "read",
+                "matched",
                 "rule",
                 "target_folder",
                 "action",
@@ -193,8 +233,9 @@ def main() -> None:
 
             subject = decode_text(message.get("Subject"))
             sender = decode_text(message.get("From"))
+            body = extract_email_body(message)
 
-            rule = find_matching_rule(subject, sender, rules)
+            rule = find_matching_rule(subject, sender, body, rules)
 
             if rule:
                 print("MATCH")
@@ -210,12 +251,27 @@ def main() -> None:
                     "dry_run": dry_run,
                     "email_id": msg_id.decode(),
                     "read": "YES" if is_read else "NO",
+                    "matched": "YES",
                     "rule": rule["name"],
                     "target_folder": rule["folder"],
                     "action": rule.get("action", "move"),
                     "from": sender,
                     "subject": subject
                 })
+            else:
+                if config.get("logUnmatched", False):
+                    write_log_row({
+                        "timestamp": datetime.now().isoformat(timespec="seconds"),
+                        "dry_run": dry_run,
+                        "email_id": msg_id.decode(),
+                        "read": "YES" if is_read else "NO",
+                        "matched": "NO",
+                        "rule": "UNMATCHED",
+                        "target_folder": "",
+                        "action": "none",
+                        "from": sender,
+                        "subject": subject
+                    })
 
         if last_log_file:
             print("\nLog file created:")
