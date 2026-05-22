@@ -18,13 +18,24 @@ def decode_text(value: str | None) -> str:
         return ""
 
     result = ""
+
     for part, encoding in decode_header(value):
         if isinstance(part, bytes):
-            result += part.decode(encoding or "utf-8", errors="replace")
+            try:
+                safe_encoding = encoding or "utf-8"
+
+                if safe_encoding.lower() == "unknown-8bit":
+                    safe_encoding = "utf-8"
+
+                result += part.decode(safe_encoding, errors="replace")
+
+            except (LookupError, UnicodeDecodeError):
+                result += part.decode("utf-8", errors="replace")
+
         else:
             result += part
 
-    return result
+    return result.strip()
 
 
 def load_rules() -> dict:
@@ -34,7 +45,8 @@ def load_rules() -> dict:
 
 def contains_any(text: str, keywords: list[str]) -> bool:
     text_lower = text.lower()
-    return any(keyword.strip().lower() in text_lower for keyword in keywords if keyword.strip())
+    #return any(keyword.strip().lower() in text_lower for keyword in keywords if keyword.strip())
+    return any(keyword.strip() != "" and keyword.lower() in text_lower for keyword in keywords)
 
 def extract_email_body(message) -> str:
     body = ""
@@ -66,12 +78,21 @@ def extract_email_body(message) -> str:
 
     return body
 
-def find_matching_rule(subject: str, sender: str, body: str, rules: list[dict]) -> dict | None:
-    enabled_rules = [
-        rule for rule in rules
-        if rule.get("enabled", True)
-    ]
+def contains_any_with_match(text: str, keywords: list[str]) -> tuple[bool, str]:
+    text_lower = text.lower()
 
+    for keyword in keywords:
+        #keyword_clean = keyword.strip()
+        #if keyword_clean and keyword_clean.lower() in text_lower:
+        #    return True, keyword_clean
+        if keyword != "" and keyword.lower() in text_lower:
+            return True, keyword
+
+    return False, ""
+
+
+def find_matching_rule(subject: str, sender: str, body: str, rules: list[dict]) -> tuple[dict | None, str]:
+    enabled_rules = [rule for rule in rules if rule.get("enabled", True)]
     enabled_rules.sort(key=lambda r: r.get("priority", 9999))
 
     searchable_text = f"{subject}\n{sender}\n{body}"
@@ -84,46 +105,39 @@ def find_matching_rule(subject: str, sender: str, body: str, rules: list[dict]) 
         from_keywords = rule.get("fromContains", [])
         body_keywords = rule.get("bodyContains", [])
 
-        required_has_condition = any(keyword.strip() for keyword in required_keywords)
-
-        if required_has_condition and not contains_all(searchable_text, required_keywords):
-            continue
-
-        subject_has_condition = any(keyword.strip() for keyword in subject_keywords)
-        from_has_condition = any(keyword.strip() for keyword in from_keywords)
-        body_has_condition = any(keyword.strip() for keyword in body_keywords)
-
-        subject_matches = contains_any(subject, subject_keywords)
-        from_matches = contains_any(sender, from_keywords)
-        body_matches = contains_any(body, body_keywords)
+        if any(k.strip() for k in required_keywords):
+            required_ok = all(k.strip().lower() in searchable_text.lower() for k in required_keywords if k.strip())
+            if not required_ok:
+                continue
 
         checks = []
 
-        if subject_has_condition:
-            checks.append(subject_matches)
+        subject_match, subject_keyword = contains_any_with_match(subject, subject_keywords)
+        from_match, from_keyword = contains_any_with_match(sender, from_keywords)
+        body_match, body_keyword = contains_any_with_match(body, body_keywords)
 
-        if from_has_condition:
-            checks.append(from_matches)
+        if any(k.strip() for k in subject_keywords):
+            checks.append(("subject", subject_match, subject_keyword))
 
-        if body_has_condition:
-            checks.append(body_matches)
+        if any(k.strip() for k in from_keywords):
+            checks.append(("from", from_match, from_keyword))
+
+        if any(k.strip() for k in body_keywords):
+            checks.append(("body", body_match, body_keyword))
 
         if not checks:
             continue
 
-        if match_type == "any" and any(checks):
-            return rule
+        if match_type == "any":
+            for field, matched, keyword in checks:
+                if matched:
+                    return rule, f"{field} contains '{keyword}'"
 
-        if match_type == "all" and all(checks):
-            return rule
+        if match_type == "all" and all(matched for _, matched, _ in checks):
+            reasons = [f"{field} contains '{keyword}'" for field, _, keyword in checks if keyword]
+            return rule, " AND ".join(reasons)
 
-        if match_type not in ("any", "all"):
-            raise ValueError(
-                f"Invalid matchType '{match_type}' in rule '{rule.get('name', 'Unnamed')}'. "
-                "Allowed values are: any, all"
-            )
-
-    return None
+    return None, ""
 
 def build_search_criteria(read_filter: str) -> str:
     match read_filter.lower():
@@ -174,7 +188,8 @@ def write_log_row(row: dict) -> Path:
                 "target_folder",
                 "action",
                 "from",
-                "subject"
+                "subject",
+                "match_reason"
             ]
         )
 
@@ -243,7 +258,7 @@ def main() -> None:
             sender = decode_text(message.get("From"))
             body = extract_email_body(message)
 
-            rule = find_matching_rule(subject, sender, body, rules)
+            rule, match_reason = find_matching_rule(subject, sender, body, rules)
 
             if rule:
                 print("MATCH")
@@ -253,6 +268,7 @@ def main() -> None:
                 print(f"Target folder: {rule['folder']}")
                 print(f"From: {sender}")
                 print(f"Subject: {subject}")
+                print(f"Match reason: {match_reason}")
                 print("-" * 70)
                 last_log_file = write_log_row({
                     "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -264,7 +280,8 @@ def main() -> None:
                     "target_folder": rule["folder"],
                     "action": rule.get("action", "move"),
                     "from": sender,
-                    "subject": subject
+                    "subject": subject,
+                    "match_reason": match_reason
                 })
             else:
                 if config.get("logUnmatched", False):
