@@ -147,7 +147,6 @@ YAHOO_EMAIL=your_email@yahoo.com
 YAHOO_APP_PASSWORD=your_app_password
 IMAP_SERVER=imap.mail.yahoo.com
 IMAP_PORT=993
-DRY_RUN=true
 ```
 
 ---
