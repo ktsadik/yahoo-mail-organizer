@@ -228,6 +228,27 @@ def resolve_action(rule: dict, is_read: bool) -> tuple[str, str]:
 
     return default_action, default_folder
 
+def get_mailbox_stats(mail) -> dict:
+    stats = {}
+
+    queries = {
+        "all": "ALL",
+        "read": "SEEN",
+        "unread": "UNSEEN",
+        "starred": "FLAGGED",
+        "unstarred": "UNFLAGGED",
+    }
+
+    for name, criteria in queries.items():
+        status, data = mail.uid("search", None, criteria)
+
+        if status == "OK" and data and data[0]:
+            stats[name] = len(data[0].split())
+        else:
+            stats[name] = 0
+
+    return stats
+
 def write_log_row(row: dict) -> Path:
     logs_dir = BASE_DIR / "logs"
     logs_dir.mkdir(exist_ok=True)
@@ -293,6 +314,17 @@ def main() -> None:
     with imaplib.IMAP4_SSL(IMAP_SERVER, IMAP_PORT) as mail:
         mail.login(YAHOO_EMAIL, YAHOO_APP_PASSWORD)
         mail.select("INBOX")
+
+        stats = get_mailbox_stats(mail)
+
+        print("\nINBOX stats")
+        print("-" * 40)
+        print(f"All emails      : {stats['all']}")
+        print(f"Read emails     : {stats['read']}")
+        print(f"Unread emails   : {stats['unread']}")
+        print(f"Starred emails  : {stats['starred']}")
+        print(f"Unstarred emails: {stats['unstarred']}")
+        print("-" * 40)
 
         search_criteria = build_search_criteria(read_filter)
 
