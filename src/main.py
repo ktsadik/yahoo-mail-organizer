@@ -2,6 +2,7 @@ import imaplib
 import email
 import json
 import csv
+import re
 from datetime import datetime
 from email.header import decode_header
 from pathlib import Path
@@ -45,8 +46,19 @@ def load_rules() -> dict:
 
 def contains_any(text: str, keywords: list[str]) -> bool:
     text_lower = text.lower()
-    #return any(keyword.strip().lower() in text_lower for keyword in keywords if keyword.strip())
-    return any(keyword.strip() != "" and keyword.lower() in text_lower for keyword in keywords)
+
+    for keyword in keywords:
+        keyword_clean = keyword.strip()
+
+        if not keyword_clean:
+            continue
+
+        pattern = r"\b" + re.escape(keyword_clean.lower()) + r"\b"
+
+        if re.search(pattern, text_lower):
+            return True
+
+    return False
 
 def extract_email_body(message) -> str:
     body = ""
@@ -82,10 +94,14 @@ def contains_any_with_match(text: str, keywords: list[str]) -> tuple[bool, str]:
     text_lower = text.lower()
 
     for keyword in keywords:
-        #keyword_clean = keyword.strip()
-        #if keyword_clean and keyword_clean.lower() in text_lower:
-        #    return True, keyword_clean
-        if keyword != "" and keyword.lower() in text_lower:
+        keyword_clean = keyword.strip()
+
+        if not keyword_clean:
+            continue
+
+        pattern = r"\b" + re.escape(keyword_clean.lower()) + r"\b"
+
+        if re.search(pattern, text_lower):
             return True, keyword
 
     return False, ""
@@ -237,11 +253,21 @@ def main() -> None:
 
         message_ids = data[0].split()
         latest_ids = message_ids[-limit:]
+        total_emails = len(latest_ids)
+        processed_count = 0
+        matched_count = 0
 
         print(f"\nChecking latest {len(latest_ids)} emails...")
         print("-" * 70)
 
         for msg_id in latest_ids:
+            processed_count += 1
+
+            print(
+                f"\n[{processed_count}/{total_emails}] "
+                f"Processing email ID {msg_id.decode()}..."
+            )
+
             # Get real read/unread status before reading the body.
             is_read = is_message_read(mail, msg_id)
 
@@ -261,6 +287,7 @@ def main() -> None:
             rule, match_reason = find_matching_rule(subject, sender, body, rules)
 
             if rule:
+                matched_count += 1
                 print("MATCH")
                 print(f"Read: {'YES' if is_read else 'NO'}")
                 print(f"ID: {msg_id.decode()}")
@@ -303,6 +330,12 @@ def main() -> None:
             print(last_log_file)
         else:
             print("\nNo matching emails found. No log file created.")
+
+        print("\nRun summary")
+        print("-" * 40)
+        print(f"Processed emails : {processed_count}")
+        print(f"Matched emails   : {matched_count}")
+        print(f"Unmatched emails : {processed_count - matched_count}")
 
         mail.logout()
 
