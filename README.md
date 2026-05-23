@@ -42,6 +42,20 @@ Supported matching modes:
 * `matchType: any` (OR)
 * `matchType: all` (AND)
 
+Supported action behavior:
+
+* Default rule-level actions
+* Optional action overrides based on read/unread status
+* `move`
+* `skip`
+
+The rule engine supports:
+
+* Priorities
+* Dry-run testing
+* Match explanations (`match_reason`)
+* Whole-word keyword matching using regex
+
 ## Safety Features
 
 * Dry-run mode
@@ -169,20 +183,38 @@ Example:
   "logUnmatched": true,
   "rules": [
     {
-      "name": "Etsy Sales",
+      "name": "Delivered Packages",
       "enabled": true,
-      "priority": 5,
-      "folder": "Etsy/Sales",
-      "matchType": "all",
+      "priority": 20,
+
+      "folder": "Packages",
+      "action": "move",
+
+      "matchType": "any",
+
       "requiredContains": [],
+
       "subjectContains": [
-        "order confirmation"
+        "delivered",
+        "package delivered"
       ],
+
       "fromContains": [
-        "etsy"
+        "amazon",
+        "aliexpress"
       ],
+
       "bodyContains": [],
-      "action": "move"
+
+      "actionByReadStatus": {
+        "read": {
+          "action": "move",
+          "folder": "ToTrash"
+        },
+        "unread": {
+          "action": "skip"
+        }
+      }
     }
   ]
 }
@@ -229,6 +261,31 @@ All required keywords must appear somewhere in:
 * Body
 
 Useful for more precise classification.
+
+## actionByReadStatus
+
+Allows different actions depending on whether the email is read or unread.
+
+Example:
+
+```json
+"actionByReadStatus": {
+  "read": {
+    "action": "move",
+    "folder": "ToTrash"
+  },
+  "unread": {
+    "action": "skip"
+  }
+}
+```
+
+If a status-specific override does not exist, the rule falls back to the default:
+
+* `action`
+* `folder`
+
+configured on the rule itself.
 
 ---
 
@@ -329,5 +386,3 @@ Possible future improvements:
 # License
 
 Currently intended for personal/private usage.
-
-License can be added later if the project becomes open source.

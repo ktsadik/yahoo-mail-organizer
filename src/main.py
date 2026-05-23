@@ -209,6 +209,25 @@ def move_email(mail, msg_id: bytes, target_folder: str) -> bool:
 
     return True
 
+def resolve_action(rule: dict, is_read: bool) -> tuple[str, str]:
+    default_action = rule.get("action", "move")
+    default_folder = rule.get("folder", "")
+
+    action_by_read_status = rule.get("actionByReadStatus")
+
+    if action_by_read_status:
+        status_key = "read" if is_read else "unread"
+
+        status_action = action_by_read_status.get(status_key)
+
+        if status_action:
+            return (
+                status_action.get("action", default_action),
+                status_action.get("folder", default_folder),
+            )
+
+    return default_action, default_folder
+
 def write_log_row(row: dict) -> Path:
     logs_dir = BASE_DIR / "logs"
     logs_dir.mkdir(exist_ok=True)
@@ -240,7 +259,6 @@ def write_log_row(row: dict) -> Path:
         writer.writerow(row)
 
     return log_file
-
 
 def main() -> None:
     config = load_rules()
@@ -335,11 +353,11 @@ def main() -> None:
             if rule:
                 matched_count += 1
 
-                action = rule.get("action", "move")
+                action, target_folder = resolve_action(rule, is_read)
                 action_result = "DRY_RUN"
 
                 if not dry_run and action == "move":
-                    moved = move_email(mail, msg_id, rule["folder"])
+                    moved = move_email(mail, msg_id, target_folder)
 
                     if moved:
                         action_result = "MOVED"
@@ -347,6 +365,10 @@ def main() -> None:
                     else:
                         action_result = "MOVE_FAILED"
                         move_failed_count += 1
+
+                elif action == "skip":
+                    action_result = "SKIPPED"
+
                 else:
                     dry_run_count += 1
 
@@ -368,7 +390,7 @@ def main() -> None:
                     "read": "YES" if is_read else "NO",
                     "matched": "YES",
                     "rule": rule["name"],
-                    "target_folder": rule["folder"],
+                    "target_folder": target_folder,
                     "from": sender,
                     "subject": subject,
                     "action": action,
