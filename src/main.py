@@ -155,8 +155,8 @@ def build_search_criteria(read_filter: str) -> str:
             raise ValueError("readFilter must be one of: all, read, unread")
 
 
-def is_message_read(mail, msg_id: bytes) -> bool:
-    status, flags_data = mail.fetch(msg_id, "(FLAGS)")
+def is_message_read(mail, msg_uid: bytes) -> bool:
+    status, flags_data = mail.uid("fetch", msg_uid, "(FLAGS)")
     if status != "OK":
         return False
 
@@ -167,7 +167,6 @@ def is_message_read(mail, msg_id: bytes) -> bool:
     )
 
     return "\\Seen" in flags_text or "\\SEEN" in flags_text
-
 
 def get_selected_message_ids(mail, message_ids: list[bytes], read_filter: str, limit: int) -> list[bytes]:
     selected_ids = []
@@ -181,32 +180,34 @@ def get_selected_message_ids(mail, message_ids: list[bytes], read_filter: str, l
         if read_filter == "unread" and is_read:
             continue
 
-        selected_ids.append(msg_id)
+        selected_ids.insert(0, msg_id)
 
         if len(selected_ids) >= limit:
             break
 
-    return list(reversed(selected_ids))
+    return selected_ids
 
 
 def move_email(mail, msg_id: bytes, target_folder: str) -> bool:
     folder_encoded = imap_utf7_encode(target_folder)
     folder_arg = b'"' + folder_encoded + b'"'
 
-    status, _ = mail.copy(msg_id, folder_arg)
+    print(f"Trying to move UID {msg_id.decode()} to folder: {target_folder}")
+    print(f"Encoded folder: {folder_arg}")
 
-    if status != "OK":
-        print(f"Failed to copy email {msg_id.decode()} to folder: {target_folder}")
+    copy_status, copy_data = mail.uid("copy", msg_id, folder_arg)
+    print(f"COPY status: {copy_status}, data: {copy_data}")
+
+    if copy_status != "OK":
         return False
 
-    status, _ = mail.store(msg_id, "+FLAGS", "\\Deleted")
+    store_status, store_data = mail.uid("store", msg_id, "+FLAGS", r"(\Deleted)")
+    print(f"STORE status: {store_status}, data: {store_data}")
 
-    if status != "OK":
-        print(f"Copied email but failed to mark original as deleted: {msg_id.decode()}")
+    if store_status != "OK":
         return False
 
     return True
-
 
 def write_log_row(row: dict) -> Path:
     logs_dir = BASE_DIR / "logs"
@@ -277,7 +278,7 @@ def main() -> None:
 
         search_criteria = build_search_criteria(read_filter)
 
-        status, data = mail.search(None, search_criteria)
+        status, data = mail.uid("search", None, search_criteria)
         if status != "OK":
             raise RuntimeError("Failed to search INBOX")
 
@@ -289,6 +290,10 @@ def main() -> None:
             read_filter=read_filter,
             limit=limit,
         )
+
+        print("\nSelected email IDs:")
+        for x in latest_ids:
+            print(x.decode())
 
         total_emails = len(latest_ids)
 
@@ -313,7 +318,7 @@ def main() -> None:
                 print(f"SAFETY SKIP: read email ID {msg_id.decode()} while readFilter=unread")
                 continue
 
-            status, msg_data = mail.fetch(msg_id, "(BODY.PEEK[])")
+            status, msg_data = mail.uid("fetch", msg_id, "(BODY.PEEK[])")
             if status != "OK":
                 print(f"Failed to fetch message {msg_id.decode()}")
                 continue
